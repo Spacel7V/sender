@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Command Console</title>
+</head>
+
+<body>
+    <h2>Entrer une commande Batch</h2>
+    <form action="/" method="POST">
+        <input type="text" name="commande" placeholder="Commande batch">
+        <button type="submit">Envoyer</button>
+    </form>
+    <p>Dernière commande soumise : {{ commande }}</p>
+    <h3>Résultat de la commande :</h3>
+    <pre>{{ resultat_commande }}</pre>
+</body>
+
+</html>
