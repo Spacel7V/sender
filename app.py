@@ -19,6 +19,9 @@ html_formulaire = """
         <input type="text" name="destinataires" placeholder="* ou ID1,ID2,...">
         <button type="submit">Envoyer</button>
     </form>
+    <form action="/clear_output" method="POST" style="margin-top: 20px;">
+        <button type="submit">Clear Outputs</button>
+    </form>
     <p>Dernière commande soumise : {{ commande }}</p>
     <p>Destinataires : {{ destinataires }}</p>
     <h3>Résultat de la commande :</h3>
@@ -64,6 +67,12 @@ def post_resultat():
     resultat = request.form.get("resultat", "").strip()
     resultat_commande += f"\n[{machine_id}]\n{resultat}\n"
     return "Résultat reçu", 200
+
+@app.route("/clear_output", methods=["POST"])
+def clear_output():
+    global resultat_commande
+    resultat_commande = ""  # Vider les résultats
+    return "Outputs cleared", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
