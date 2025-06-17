@@ -30,7 +30,7 @@ html_page = """
   </style>
 </head>
 <body>
-  <h1>🖥️ Contrôle à Distance RAT</h1>
+  <h1>🖥️ Contrôle à Distance III</h1>
 
   <!-- Choix du mode -->
   <div class="section">
