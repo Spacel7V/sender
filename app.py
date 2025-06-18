@@ -163,7 +163,7 @@ def screen_png():
     except FileNotFoundError:
         return "", 404
 
- def mjpeg_generator():
+def mjpeg_generator():
     boundary = b"--frame"
     while True:
         try:
