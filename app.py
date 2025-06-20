@@ -20,7 +20,7 @@ html_page = """
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Contrôle à Distance v.IV</title>
+  <title>Contrôle à Distance v.V</title>
   <style>
     body { font-family: sans-serif; padding:20px; }
     .section { margin-top:30px; }
