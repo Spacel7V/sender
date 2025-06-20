@@ -31,7 +31,7 @@ html_page = """
   </style>
 </head>
 <body>
-  <h1>🖥️ Contrôle à Distance v.VI</h1>
+  <h1>🖥️ Contrôle à Distance v.wawa</h1>
   <div class="section">
     <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"   {% if mode=='cmd'   %}disabled{% endif %}>⚪ Commande</button>
     <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'"  {% if mode=='live'  %}disabled{% endif %}>🔴 Live</button>
